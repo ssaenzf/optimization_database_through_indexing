@@ -1,0 +1,73 @@
+OPTIMIZACION:
+
+
+Tarea E:
+
+a) script clientesDistintos.sql
+b)
+Dentro de un bucle se tendrá que hacer un por un lado full table scan de la tabla orders del date que coincida con el mes y el año fijados para orderdate, es necesario el full table scan necesario pues se tienen que extraer campos de este atributo, además de un range scan para el total amount el cual al no ser un indice será muy costoso
+
+Por otro lado dentro del bucle habrá que hacer unique key lookup para la tabla customers (customerid) y un non unique key lookup para la tabla orders, lo cual tendrá un coste muy optimo sobre todo para el primero.
+
+Por se hará un aggregate a partir de lo obtenido del bucle lo cual tendrá poco coste
+
+Fuera de la subquery se hará un full table scan de customers de gran coste.
+
+El coste es 5644
+
+c) y d)
+
+Con el fin de mejorar el rendimiento hemos observado que las busquedas dentro de la tabla customers erán optimas porque se hacía siempre un unique key lookup. Sin embargo en el caso de la 
+tabla orders había que hacer un non unique key lookup lo cual es optimo pero para los campos totalamount y el orderdate era preciso un full table scan, por lo que hemos realizado un indice para el campo amount, ya que en el caso de orderdate es irrelevante hacerle ya que se tiene que hacer necesariamente el full table scan pues se extraen campos a traves de las funciones month y year para todas las columnas. El coste es 4496.
+
+e)
+
+Entre los distintos indices probados está (totalamount, orderdate), su coste es parecido al caso mejor, sin embargo es menos optimo ya que para diferentes busquedas en funcion de uno de los dos atributos del indice es mas optimo tener una mayor especificidad y tener un indice para dicho atributo. El coste es 4764
+
+Otro posibilidad habría sido solo hacer un indice con orderdate y otro con totalamount, pero como ya explicamos hacer un indice para orderdate es irrelevante pues es preciso hacer siempre el fulltable scan, sería casi prejudicial pues creando el indice estamos malgastando espacio de memoria de nivel superior que no nos va a ser preciso. El coste es 4496
+
+La ultima posibilidad habría sido un indice con orderdate, pero como explicamos habría sido preciso igualmente hacer un full table scan y por eso es irrelevante y su coste es igual que 
+el caso de no tener ningun indice.
+
+En el caso de haber creado cualquier otro indice con cualquier otra combinacion de atributos nos será irrelevante para esta ejecuccion concreta y solo se malgastará espacio de memoria de nivel superior,siendo su coste de ejecuccion el mismo que el del caso de no tener indices.
+
+
+Tarea F:
+
+En la primerá consulta se realizará un unique key lookup para el atributo status, lo cual es bastante optimo. Y con los resultados de esta subconsulta se realizará un seq scan para la tabla customers del atributo customerid, algo bastante rapido pero debido a que se tiene que realizar una vez obtenida la subconsulta no es optimo. Debido a que es necesaria la ejecuccion secuencial de las subconsultas solo habra posibilidad de paralelismo dentro de las subconsultas. Se empezarán a mostrar resultados una vez resuelta la subconsulta en las iteraciones de la consulta principal.
+El coste es 3961
+
+En la segunda consulta se hará una suconsulta donde se realizará un unique key lookup para la tabla customers a partir de customerid y de la tabla orders a partir de orderid y se realizará un union, y a partir de esta subconsulta se obtendrá la tabla A, esto en principio es optimo. Sin embargo a partir de la tabla 'A' se hará un group a partir de customer id, y esta agregacion será bastante costosa. Como ventaja se pueden paralelizar las dos consultas para la busqueda del customer id y de status y se podrán empezar a sacar resultados desde el comienzo pues no es necesaria la ejecuccion de toda la subconsulta para verificar que se cumplen las condiciones para ciertos customerid.
+El coste es 4548
+
+Está ultima consulta será la mas optima ya que se hará un unique key lookup customers(customerid) y un unique key lookup para oreders(status) y un adjuntado de ambas subconsultas siendo esto muy poco costoso. Se pueden paralelizar ambas subconsultas sin embargo no se empearán a mostrar resultados hasta que finalicen ambas.
+El coste es proximo a 0
+
+Tarea G:
+
+a y b) 
+
+La primera consulta tendrá un coste de 3507 se hará un full table scan para la columna status y a partir de esta una agregacion para hallar el count, muy poco optimo ambas operaciones de ahi el coste elevado para una consulta tan simple.
+
+La segunda consulta tendrá un coste de 3961, está tendrá una forma similar a la primera la diferencia es que en el full table scan se buscará para la columna status un valor "shipped" mas costoso de detectar en las comparaciones que el valor null. Esto se debe a que los registros con valores null se colocan en una determinada zona por defecto lo que facilita su busqueda.
+
+c y d)
+
+El coste de la primera consulta pasa a ser 1496, esto se debe a que debido a la creacion del indice status se hará un bitmap index scan para status debido a que no se va a leer tan poco como en un index scan ni tanto como en un sequential scan, es algo mas optimo que el full table scan de antes, sin embargo la agregacion se mantedrá costosa. Con el bitmap index scan se accede solo accedera a un subconjunto de los registros.
+
+El coste de la segunda consulta pasa a ser 1498, similar a la primera ya que se realizará la consulta de la misma manerá y la primerá consulta ya no se beneficiará de buscar valores null ya que al crear el indice se guardan los valores de esa columna de la misma forma que en la segunda consulta
+
+e y f)
+
+La primera consulta pasa a tener un coste de 7.26 mucho mas efectivo que antes, ya que despues de analizar estadisticas postgres determina que es mas efectivo hacer un single key lookup para status, algo mucho mas eficiente que el bit map scan, el agregate el problema que no se elimina ya que es terriblemente costoso.
+
+La segunda consulta pasa a tener un coste de 4211, bastante peor que antes. En este caso es mucho menos eficiente ya que postgres determina a partir de sus estadisticas hacer un parallel single seq scan para un primary ley como orders(status), algo optimo, mas que el bitmap de la anterior, pero hace dos agregaciones una parcial y otra final tremendamente costosas, sobre todo la agregacion parcial, y no una sola como antes.
+
+g y h)
+
+En la tercera consulta hay un coste de 2333 pues se hacen dos bitmap scan anidados para orders y el agregate necesario, sigue siendo mejor hacer un bitmap de mas que el agregate de mas, como se refleja en los tiempos de esta y la segunda despues de analyze pero obviamente peor que un unico single key lookup como era en la primera consulta despues de analyze. Si se compara esta con las consultas antes de generar estadisticas es peor que las dos pues aqui pqsl decide que se hagan dos bitmap scan y no uno como realizarion estas
+
+La cuarta y ultima consulta tendrá un coste de 2948, sera proxima a los valores de la tercera consulta pues tambien se hacen dos bitmap scan anidados y un agregate, pero de alguna forma es menos eficiente al dar mayor peso a la subconsulta mas interna del bitmapscan. Comparandose con las otras dos consultas realizadas despues de analyze sus tiempos comparandose con estas se explican de la misma forma que como explicamos para la tercera, y lo mismo ocurre para las dos consultas antes de ejecutar analyze.
+
+
+
